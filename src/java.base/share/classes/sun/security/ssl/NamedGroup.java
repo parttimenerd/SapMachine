@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,7 +39,6 @@ import javax.crypto.KeyAgreement;
 import javax.crypto.spec.DHParameterSpec;
 import sun.security.ssl.ECDHKeyExchange.ECDHEPossession;
 import sun.security.util.CurveDB;
-import sun.security.action.GetPropertyAction;
 
 /**
  * An enum containing all known named groups for use in TLS.
@@ -274,7 +273,7 @@ enum NamedGroup {
                     | NoSuchAlgorithmException exp) {
                 if (namedGroupSpec != NamedGroupSpec.NAMED_GROUP_XDH) {
                     mediator = false;
-                    if (SSLLogger.isOn && SSLLogger.isOn("ssl,handshake")) {
+                    if (SSLLogger.isOn() && SSLLogger.isOn("ssl,handshake")) {
                         SSLLogger.warning(
                             "No AlgorithmParameters for " + name, exp);
                     }
@@ -295,7 +294,7 @@ enum NamedGroup {
                         // AlgorithmParameters.getInstance(name);
                     } catch (NoSuchAlgorithmException nsae) {
                         mediator = false;
-                        if (SSLLogger.isOn && SSLLogger.isOn("ssl,handshake")) {
+                        if (SSLLogger.isOn() && SSLLogger.isOn("ssl,handshake")) {
                             SSLLogger.warning(
                                 "No AlgorithmParameters for " + name, nsae);
                         }
@@ -383,7 +382,7 @@ enum NamedGroup {
         for (String ss : namedGroups) {
             NamedGroup ng = NamedGroup.nameOf(ss);
             if (ng == null || !ng.isAvailable) {
-                if (SSLLogger.isOn &&
+                if (SSLLogger.isOn() &&
                         SSLLogger.isOn("ssl,handshake,verbose")) {
                     SSLLogger.finest(
                             "Ignore the named group (" + ss
@@ -752,8 +751,7 @@ enum NamedGroup {
             //
             // If the System Property is not defined or the value is empty, the
             // default groups and preferences will be used.
-            String property = GetPropertyAction
-                    .privilegedGetProperty("jdk.tls.namedGroups");
+            String property = System.getProperty("jdk.tls.namedGroups");
             if (property != null && !property.isEmpty()) {
                 // remove double quote marks from beginning/end of the property
                 if (property.length() > 1 && property.charAt(0) == '"' &&
@@ -813,7 +811,7 @@ enum NamedGroup {
                 }
 
                 if (groupList.isEmpty() &&
-                        SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+                        SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                     SSLLogger.warning("No default named groups");
                 }
             }

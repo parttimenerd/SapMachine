@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,9 +31,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
-import java.security.AccessController;
 import java.security.KeyStore;
-import java.security.PrivilegedExceptionAction;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,11 +48,13 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
+import jdk.internal.util.OperatingSystem;
 import jdk.test.lib.net.SimpleSSLContext;
 import jdk.test.lib.net.URIBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import static com.sun.net.httpserver.HttpExchange.RSPBODY_EMPTY;
 import static java.net.http.HttpClient.Builder.NO_PROXY;
 import static java.net.http.HttpClient.Version.HTTP_1_1;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,12 +68,14 @@ import static org.junit.jupiter.api.Assertions.fail;
  * @bug 8326381
  * @summary verifies that the setNeedClientAuth() and setWantClientAuth()
  *          methods on HttpsParameters class work as expected
+ * @modules java.base/jdk.internal.util
  * @library /test/lib
  * @build jdk.test.lib.net.SimpleSSLContext jdk.test.lib.net.URIBuilder
  * @run junit HttpsParametersClientAuthTest
  */
 public class HttpsParametersClientAuthTest {
 
+    private static final boolean IS_WINDOWS = OperatingSystem.isWindows();
     private static final AtomicInteger TID = new AtomicInteger();
     private static final ThreadFactory SRV_THREAD_FACTORY = (r) -> {
         final Thread t = new Thread(r);
@@ -220,9 +222,11 @@ public class HttpsParametersClientAuthTest {
                             throw ioe;
                         }
                         // verify it failed due to right reason
-                        Throwable cause = ioe;
+                        Throwable cause = ioe.getCause();
                         while (cause != null) {
-                            // either of SocketException or SSLHandshakeException are OK
+                            // either of SocketException or SSLHandshakeException are OK.
+                            // additionally on Windows we accept even IOException
+                            // (caused by WSAECONNABORTED)
                             if (cause instanceof SocketException se) {
                                 final String msg = se.getMessage();
                                 assertTrue(msg != null && msg.contains("Connection reset"),
@@ -234,6 +238,12 @@ public class HttpsParametersClientAuthTest {
                                 assertTrue(msg != null && msg.contains("certificate_required"),
                                         "unexpected message in SSLHandshakeException: " + msg);
                                 System.out.println("received the expected exception: " + she);
+                                break;
+                            } else if (IS_WINDOWS && cause instanceof IOException winIOE) {
+                                // on Windows we sometimes receive this exception, which is
+                                // acceptable
+                                System.out.println("(windows) received the expected exception: "
+                                        + winIOE);
                                 break;
                             }
                             cause = cause.getCause();
@@ -348,21 +358,15 @@ public class HttpsParametersClientAuthTest {
     }
 
     private static KeyStore loadTestKeyStore() throws Exception {
-        return AccessController.doPrivileged(
-                new PrivilegedExceptionAction<KeyStore>() {
-                    @Override
-                    public KeyStore run() throws Exception {
-                        final String testKeys = System.getProperty("test.src")
-                                + "/"
-                                + "../../../../../../test/lib/jdk/test/lib/net/testkeys";
-                        try (final FileInputStream fis = new FileInputStream(testKeys)) {
-                            final char[] passphrase = "passphrase".toCharArray();
-                            final KeyStore ks = KeyStore.getInstance("PKCS12");
-                            ks.load(fis, passphrase);
-                            return ks;
-                        }
-                    }
-                });
+        final String testKeys = System.getProperty("test.src")
+                + "/"
+                + "../../../../../../test/lib/jdk/test/lib/net/testkeys";
+        try (final FileInputStream fis = new FileInputStream(testKeys)) {
+            final char[] passphrase = "passphrase".toCharArray();
+            final KeyStore ks = KeyStore.getInstance("PKCS12");
+            ks.load(fis, passphrase);
+            return ks;
+        }
     }
 
     // no-op implementations of the abstract methods of HttpsParameters
@@ -389,12 +393,10 @@ public class HttpsParametersClientAuthTest {
     // A HttpHandler which just returns 200 response code
     private static final class AllOKHandler implements HttpHandler {
 
-        private static final int NO_RESPONSE_BODY = -1;
-
         @Override
         public void handle(final HttpExchange exchange) throws IOException {
             System.out.println("responding to request: " + exchange.getRequestURI());
-            exchange.sendResponseHeaders(200, NO_RESPONSE_BODY);
+            exchange.sendResponseHeaders(200, RSPBODY_EMPTY);
         }
     }
 }

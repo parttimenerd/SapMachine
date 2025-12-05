@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,6 +29,7 @@ import java.io.*;
 import java.net.*;
 import javax.net.ssl.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.text.*;
@@ -37,6 +38,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Stream;
 import com.sun.net.httpserver.*;
+import static com.sun.net.httpserver.HttpExchange.RSPBODY_EMPTY;
+import static com.sun.net.httpserver.HttpExchange.RSPBODY_CHUNKED;
 
 class ExchangeImpl {
 
@@ -59,6 +62,9 @@ class ExchangeImpl {
 
     /* for formatting the Date: header */
     private static final DateTimeFormatter FORMATTER;
+    private static final boolean perExchangeAttributes =
+        !System.getProperty("jdk.httpserver.attributes", "")
+              .equals("context");
     static {
         String pattern = "EEE, dd MMM yyyy HH:mm:ss zzz";
         FORMATTER = DateTimeFormatter.ofPattern(pattern, Locale.US)
@@ -76,7 +82,7 @@ class ExchangeImpl {
     PlaceholderOutputStream uos_orig;
 
     boolean sentHeaders; /* true after response headers sent */
-    Map<String,Object> attributes;
+    final Map<String,Object> attributes;
     int rcode = -1;
     HttpPrincipal principal;
     ServerImpl server;
@@ -91,6 +97,9 @@ class ExchangeImpl {
         this.uri = u;
         this.connection = connection;
         this.reqContentLen = len;
+        this.attributes = perExchangeAttributes
+            ? new ConcurrentHashMap<>()
+            : getHttpContext().getAttributes();
         /* ros only used for headers, body written directly to stream */
         this.ros = req.outputStream();
         this.ris = req.inputStream();
@@ -207,7 +216,7 @@ class ExchangeImpl {
         }
         this.rcode = rCode;
         String statusLine = "HTTP/1.1 "+rCode+Code.msg(rCode)+"\r\n";
-        OutputStream tmpout = new BufferedOutputStream (ros);
+        ByteArrayOutputStream tmpout = new ByteArrayOutputStream();
         PlaceholderOutputStream o = getPlaceholderResponseBody();
         tmpout.write (bytes(statusLine, 0), 0, statusLine.length());
         boolean noContentToSend = false; // assume there is content
@@ -220,12 +229,12 @@ class ExchangeImpl {
             ||(rCode == 204)           /* no content */
             ||(rCode == 304))          /* not modified */
         {
-            if (contentLen != -1) {
+            if (contentLen != RSPBODY_EMPTY) {
                 String msg = "sendResponseHeaders: rCode = "+ rCode
-                    + ": forcing contentLen = -1";
+                    + ": forcing contentLen = RSPBODY_EMPTY";
                 logger.log (Level.WARNING, msg);
             }
-            contentLen = -1;
+            contentLen = RSPBODY_EMPTY;
             noContentLengthHeader = (rCode != 304);
         }
 
@@ -242,7 +251,7 @@ class ExchangeImpl {
             contentLen = 0;
             o.setWrappedStream (new FixedLengthOutputStream (this, ros, contentLen));
         } else { /* not a HEAD request or 304 response */
-            if (contentLen == 0) {
+            if (contentLen == RSPBODY_CHUNKED) {
                 if (http10) {
                     o.setWrappedStream (new UndefLengthOutputStream (this, ros));
                     close = true;
@@ -251,7 +260,7 @@ class ExchangeImpl {
                     o.setWrappedStream (new ChunkedOutputStream (this, ros));
                 }
             } else {
-                if (contentLen == -1) {
+                if (contentLen == RSPBODY_EMPTY) {
                     noContentToSend = true;
                     contentLen = 0;
                 }
@@ -278,11 +287,11 @@ class ExchangeImpl {
 
         write (rspHdrs, tmpout);
         this.rspContentLen = contentLen;
-        tmpout.flush() ;
-        tmpout = null;
+        tmpout.writeTo(ros);
         sentHeaders = true;
         logger.log(Level.TRACE, "Sent headers: noContentToSend=" + noContentToSend);
         if (noContentToSend) {
+            ros.flush();
             close();
         }
         server.logReply (rCode, req.requestLine(), null);
@@ -361,26 +370,15 @@ class ExchangeImpl {
     }
 
     public Object getAttribute (String name) {
-        if (name == null) {
-            throw new NullPointerException ("null name parameter");
-        }
-        if (attributes == null) {
-            attributes = getHttpContext().getAttributes();
-        }
-        return attributes.get (name);
+        return attributes.get(Objects.requireNonNull(name, "null name parameter"));
     }
 
     public void setAttribute (String name, Object value) {
-        if (name == null) {
-            throw new NullPointerException ("null name parameter");
-        }
-        if (attributes == null) {
-            attributes = getHttpContext().getAttributes();
-        }
+        var key = Objects.requireNonNull(name, "null name parameter");
         if (value != null) {
-            attributes.put (name, value);
+            attributes.put(key, value);
         } else {
-            attributes.remove (name);
+            attributes.remove(key);
         }
     }
 

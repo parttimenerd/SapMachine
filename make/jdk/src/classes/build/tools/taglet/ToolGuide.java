@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 import javax.lang.model.element.Element;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
@@ -105,8 +107,11 @@ public class ToolGuide implements Taglet {
                 continue;
             }
 
-            UnknownBlockTagTree blockTag = (UnknownBlockTagTree)tag;
-            String tagText = blockTag.getContent().toString().trim();
+            UnknownBlockTagTree blockTag = (UnknownBlockTagTree) tag;
+            String tagText = blockTag.getContent().stream()
+                    .map(Object::toString)
+                    .collect(Collectors.joining())
+                    .trim();
             Matcher m = TAG_PATTERN.matcher(tagText);
             if (m.matches()) {
                 String name = m.group("name");
@@ -151,7 +156,8 @@ public class ToolGuide implements Taglet {
                 return pe.getEnclosingElement() != null
                         ? "../" + pkgPart
                         : pkgPart;
-            case CLASS:
+
+            case CLASS, ENUM, RECORD, INTERFACE, ANNOTATION_TYPE:
                 TypeElement te = (TypeElement)elem;
                 return te.getQualifiedName()
                         .toString()
@@ -159,7 +165,10 @@ public class ToolGuide implements Taglet {
                         .replaceAll("[^/]+", "..");
 
             default:
-                throw new IllegalArgumentException(elem.getKind().toString());
+                var enclosing = elem.getEnclosingElement();
+                if (enclosing == null)
+                    throw new IllegalArgumentException(elem.getKind().toString());
+                return docRoot(enclosing);
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,8 +35,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.ProcessBuilder.Redirect;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
@@ -48,7 +46,6 @@ import jdk.internal.access.JavaIOFileDescriptorAccess;
 import jdk.internal.access.SharedSecrets;
 import jdk.internal.ref.CleanerFactory;
 import jdk.internal.misc.Blocker;
-import sun.security.action.GetPropertyAction;
 
 /* This class is for the exclusive use of ProcessBuilder.start() to
  * create new processes.
@@ -71,25 +68,15 @@ final class ProcessImpl extends Process {
      * to append to a file does not open the file in a manner that guarantees
      * that writes by the child process will be atomic.
      */
-    @SuppressWarnings("removal")
     private static FileOutputStream newFileOutputStream(File f, boolean append)
         throws IOException
     {
         if (append) {
             String path = f.getPath();
-            SecurityManager sm = System.getSecurityManager();
-            if (sm != null)
-                sm.checkWrite(path);
             long handle = openForAtomicAppend(path);
             final FileDescriptor fd = new FileDescriptor();
             fdAccess.setHandle(fd, handle);
-            return AccessController.doPrivileged(
-                new PrivilegedAction<FileOutputStream>() {
-                    public FileOutputStream run() {
-                        return new FileOutputStream(fd);
-                    }
-                }
-            );
+            return new FileOutputStream(fd);
         } else {
             return new FileOutputStream(f);
         }
@@ -100,7 +87,9 @@ final class ProcessImpl extends Process {
                          java.util.Map<String,String> environment,
                          String dir,
                          ProcessBuilder.Redirect[] redirects,
-                         boolean redirectErrorStream)
+                         boolean redirectErrorStream,
+                         // SapMachine 2024-06-12: process group extension
+                         boolean createNewProcessGroupOnSpawn)
         throws IOException
     {
         String envblock = ProcessEnvironment.toEnvironmentBlock(environment);
@@ -157,7 +146,8 @@ final class ProcessImpl extends Process {
             }
 
             Process p = new ProcessImpl(cmdarray, envblock, dir,
-                                   stdHandles, forceNullOutputStream, redirectErrorStream);
+                                   // SapMachine 2024-07-01: process group extension
+                                   stdHandles, forceNullOutputStream, redirectErrorStream, createNewProcessGroupOnSpawn);
             if (redirects != null) {
                 // Copy the handles's if they are to be redirected to another process
                 if (stdHandles[0] >= 0
@@ -212,18 +202,18 @@ final class ProcessImpl extends Process {
     }
 
     private static final int VERIFICATION_CMD_BAT = 0;
-    private static final int VERIFICATION_WIN32 = 1;
     private static final int VERIFICATION_WIN32_SAFE = 2; // inside quotes not allowed
     private static final int VERIFICATION_LEGACY = 3;
     // See Command shell overview for documentation of special characters.
     // https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-xp/bb490954(v=technet.10)
-    private static final char ESCAPE_VERIFICATION[][] = {
+    private static final String ESCAPE_VERIFICATION[] = {
         // We guarantee the only command file execution for implicit [cmd.exe] run.
         //    http://technet.microsoft.com/en-us/library/bb490954.aspx
-        {' ', '\t', '\"', '<', '>', '&', '|', '^'},
-        {' ', '\t', '\"', '<', '>'},
-        {' ', '\t', '\"', '<', '>'},
-        {' ', '\t'}
+        // All space characters require quoting are checked in needsEscaping().
+        "\"<>&|^",
+        "\"<>",
+        "\"<>",
+        ""
     };
 
     private static String createCommandLine(int verificationType,
@@ -338,9 +328,14 @@ final class ProcessImpl extends Process {
         }
 
         if (!argIsQuoted) {
-            char testEscape[] = ESCAPE_VERIFICATION[verificationType];
-            for (int i = 0; i < testEscape.length; ++i) {
-                if (arg.indexOf(testEscape[i]) >= 0) {
+            for (int i = 0; i < arg.length(); i++) {
+                char ch = arg.charAt(i);
+                if (Character.isLetterOrDigit(ch))
+                    continue;   // skip over common characters
+                // All space chars require quotes and other mode specific characters
+                if (Character.isSpaceChar(ch) ||
+                        Character.isWhitespace(ch) ||
+                        ESCAPE_VERIFICATION[verificationType].indexOf(ch) >= 0) {
                     return true;
                 }
             }
@@ -391,12 +386,6 @@ final class ProcessImpl extends Process {
         return (upName.endsWith(".EXE") || upName.indexOf('.') < 0);
     }
 
-    // Old version that can be bypassed
-    private boolean isShellFile(String executablePath) {
-        String upPath = executablePath.toUpperCase(Locale.ROOT);
-        return (upPath.endsWith(".CMD") || upPath.endsWith(".BAT"));
-    }
-
     private String quoteString(String arg) {
         StringBuilder argbuf = new StringBuilder(arg.length() + 2);
         return argbuf.append('"').append(arg).append('"').toString();
@@ -424,23 +413,24 @@ final class ProcessImpl extends Process {
     private InputStream stdout_stream;
     private InputStream stderr_stream;
 
-    @SuppressWarnings("removal")
+    // SapMachine 2024-07-01: process group extension
+    private final long hJob;
+
     private ProcessImpl(String cmd[],
                         final String envblock,
                         final String path,
                         final long[] stdHandles,
                         boolean forceNullOutputStream,
-                        final boolean redirectErrorStream)
+                        final boolean redirectErrorStream,
+                        // SapMachine 2024-07-01: process group extension
+                        final boolean createNewProcessGroupOnSpawn)
         throws IOException
     {
         String cmdstr;
-        final SecurityManager security = System.getSecurityManager();
-        final String value = GetPropertyAction.
-                privilegedGetProperty("jdk.lang.Process.allowAmbiguousCommands",
-                        (security == null ? "true" : "false"));
+        final String value = System.getProperty("jdk.lang.Process.allowAmbiguousCommands", "true");
         final boolean allowAmbiguousCommands = !"false".equalsIgnoreCase(value);
 
-        if (allowAmbiguousCommands && security == null) {
+        if (allowAmbiguousCommands) {
             // Legacy mode.
 
             // Normalize path if possible.
@@ -478,66 +468,62 @@ final class ProcessImpl extends Process {
                 // Parse the command line again.
                 cmd = getTokensFromCommand(join.toString());
                 executablePath = getExecutablePath(cmd[0]);
-
-                // Check new executable name once more
-                if (security != null)
-                    security.checkExec(executablePath);
             }
 
             // Quotation protects from interpretation of the [path] argument as
             // start of longer path with spaces. Quotation has no influence to
             // [.exe] extension heuristic.
-            boolean isShell = allowAmbiguousCommands ? isShellFile(executablePath)
-                    : !isExe(executablePath);
+            boolean isShell = !isExe(executablePath);
             cmdstr = createCommandLine(
                     // We need the extended verification procedures
-                    isShell ? VERIFICATION_CMD_BAT
-                            : (allowAmbiguousCommands ? VERIFICATION_WIN32 : VERIFICATION_WIN32_SAFE),
+                    isShell ? VERIFICATION_CMD_BAT : VERIFICATION_WIN32_SAFE,
                     quoteString(executablePath),
                     cmd);
         }
 
+        // SapMachine 2024-07-01: process group extension
+        final long[] local_hJob = (createNewProcessGroupOnSpawn) ? new long[1] : null;
         handle = create(cmdstr, envblock, path,
-                        stdHandles, redirectErrorStream);
+                        stdHandles, redirectErrorStream, local_hJob);
+        hJob = (createNewProcessGroupOnSpawn) ? local_hJob[0] : 0;
+
         // Register a cleaning function to close the handle
         final long local_handle = handle;    // local to prevent capture of this
-        CleanerFactory.cleaner().register(this, () -> closeHandle(local_handle));
+        // SapMachine 2024-07-01: process group extension
+        CleanerFactory.cleaner().register(this, createNewProcessGroupOnSpawn ?
+                () -> closeHandle(local_handle) :
+                () -> {closeHandle(local_handle); closeHandle(local_hJob[0]);});
 
         processHandle = ProcessHandleImpl.getInternal(getProcessId0(handle));
 
-        java.security.AccessController.doPrivileged(
-        new java.security.PrivilegedAction<Void>() {
-        public Void run() {
-            if (stdHandles[0] == -1L)
-                stdin_stream = ProcessBuilder.NullOutputStream.INSTANCE;
-            else {
-                FileDescriptor stdin_fd = new FileDescriptor();
-                fdAccess.setHandle(stdin_fd, stdHandles[0]);
-                fdAccess.registerCleanup(stdin_fd);
-                stdin_stream = new BufferedOutputStream(
-                    new FileOutputStream(stdin_fd));
-            }
+        if (stdHandles[0] == -1L)
+            stdin_stream = ProcessBuilder.NullOutputStream.INSTANCE;
+        else {
+            FileDescriptor stdin_fd = new FileDescriptor();
+            fdAccess.setHandle(stdin_fd, stdHandles[0]);
+            fdAccess.registerCleanup(stdin_fd);
+            stdin_stream = new BufferedOutputStream(
+                new PipeOutputStream(stdin_fd));
+        }
 
-            if (stdHandles[1] == -1L || forceNullOutputStream)
-                stdout_stream = ProcessBuilder.NullInputStream.INSTANCE;
-            else {
-                FileDescriptor stdout_fd = new FileDescriptor();
-                fdAccess.setHandle(stdout_fd, stdHandles[1]);
-                fdAccess.registerCleanup(stdout_fd);
-                stdout_stream = new BufferedInputStream(
-                    new PipeInputStream(stdout_fd));
-            }
+        if (stdHandles[1] == -1L || forceNullOutputStream)
+            stdout_stream = ProcessBuilder.NullInputStream.INSTANCE;
+        else {
+            FileDescriptor stdout_fd = new FileDescriptor();
+            fdAccess.setHandle(stdout_fd, stdHandles[1]);
+            fdAccess.registerCleanup(stdout_fd);
+            stdout_stream = new BufferedInputStream(
+                new PipeInputStream(stdout_fd));
+        }
 
-            if (stdHandles[2] == -1L)
-                stderr_stream = ProcessBuilder.NullInputStream.INSTANCE;
-            else {
-                FileDescriptor stderr_fd = new FileDescriptor();
-                fdAccess.setHandle(stderr_fd, stdHandles[2]);
-                fdAccess.registerCleanup(stderr_fd);
-                stderr_stream = new PipeInputStream(stderr_fd);
-            }
-
-            return null; }});
+        if (stdHandles[2] == -1L)
+            stderr_stream = ProcessBuilder.NullInputStream.INSTANCE;
+        else {
+            FileDescriptor stderr_fd = new FileDescriptor();
+            fdAccess.setHandle(stderr_fd, stdHandles[2]);
+            fdAccess.registerCleanup(stderr_fd);
+            stderr_stream = new PipeInputStream(stderr_fd);
+        }
     }
 
     public OutputStream getOutputStream() {
@@ -557,18 +543,24 @@ final class ProcessImpl extends Process {
 
     public int exitValue() {
         int exitCode = getExitCodeProcess(handle);
-        if (exitCode == STILL_ACTIVE)
-            throw new IllegalThreadStateException("process has not exited");
+        if (exitCode == STILL_ACTIVE) {
+            // STILL_ACTIVE (259) might be the real exit code
+            if (isProcessAlive(handle)) {
+                throw new IllegalThreadStateException("process has not exited");
+            }
+            // call again, in case the process just exited
+            return getExitCodeProcess(handle);
+        }
         return exitCode;
     }
     private static native int getExitCodeProcess(long handle);
 
     public int waitFor() throws InterruptedException {
-        long comp = Blocker.begin();
+        boolean attempted = Blocker.begin();
         try {
             waitForInterruptibly(handle);
         } finally {
-            Blocker.end(comp);
+            Blocker.end(attempted);
         }
         if (Thread.interrupted())
             throw new InterruptedException();
@@ -582,7 +574,7 @@ final class ProcessImpl extends Process {
         throws InterruptedException
     {
         long remainingNanos = unit.toNanos(timeout);    // throw NPE before other conditions
-        if (getExitCodeProcess(handle) != STILL_ACTIVE) return true;
+        if (!isProcessAlive(handle)) return true;
         if (timeout <= 0) return false;
 
         long deadline = System.nanoTime() + remainingNanos;
@@ -593,21 +585,21 @@ final class ProcessImpl extends Process {
                 // if wraps around then wait a long while
                 msTimeout = Integer.MAX_VALUE;
             }
-            long comp = Blocker.begin();
+            boolean attempted = Blocker.begin();
             try {
                 waitForTimeoutInterruptibly(handle, msTimeout);
             } finally {
-                Blocker.end(comp);
+                Blocker.end(attempted);
             }
             if (Thread.interrupted())
                 throw new InterruptedException();
-            if (getExitCodeProcess(handle) != STILL_ACTIVE) {
+            if (!isProcessAlive(handle)) {
                 return true;
             }
             remainingNanos = deadline - System.nanoTime();
         } while (remainingNanos > 0);
 
-        return (getExitCodeProcess(handle) != STILL_ACTIVE);
+        return !isProcessAlive(handle);
     }
 
     private static native void waitForTimeoutInterruptibly(
@@ -626,11 +618,6 @@ final class ProcessImpl extends Process {
 
     @Override
     public ProcessHandle toHandle() {
-        @SuppressWarnings("removal")
-        SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
-            sm.checkPermission(new RuntimePermission("manageProcess"));
-        }
         return processHandle;
     }
 
@@ -646,6 +633,17 @@ final class ProcessImpl extends Process {
     }
 
     private static native void terminateProcess(long handle);
+
+    // SapMachine 2024-07-01: process group extension
+    private static native void terminateProcessGroup(long hJob);
+
+    void terminateProcessGroup(boolean force) {
+        if (hJob == 0) {
+            destroy();
+        } else {
+            terminateProcessGroup(hJob);
+        }
+    }
 
     @Override
     public long pid() {
@@ -700,7 +698,9 @@ final class ProcessImpl extends Process {
                                       String envblock,
                                       String dir,
                                       long[] stdHandles,
-                                      boolean redirectErrorStream)
+                                      boolean redirectErrorStream,
+                                      // SapMachine 2024-07-01: process group extension
+                                      long[] processGroup)
         throws IOException;
 
     /**

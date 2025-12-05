@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,9 +27,6 @@ package sun.security.ssl;
 
 import java.io.IOException;
 import java.net.SocketException;
-import java.security.AccessControlContext;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -49,8 +46,6 @@ final class TransportContext implements ConnectionContext {
 
     // registered plaintext consumers
     final Map<Byte, SSLConsumer>    consumers;
-    @SuppressWarnings("removal")
-    final AccessControlContext      acc;
 
     final SSLContextImpl            sslContext;
     final SSLConfiguration          sslConfig;
@@ -134,7 +129,6 @@ final class TransportContext implements ConnectionContext {
                 inputRecord, outputRecord, false);
     }
 
-    @SuppressWarnings("removal")
     private TransportContext(SSLContextImpl sslContext, SSLTransport transport,
             SSLConfiguration sslConfig, InputRecord inputRecord,
             OutputRecord outputRecord, boolean isUnsureMode) {
@@ -154,8 +148,12 @@ final class TransportContext implements ConnectionContext {
         this.clientVerifyData = emptyByteArray;
         this.serverVerifyData = emptyByteArray;
 
-        this.acc = AccessController.getContext();
         this.consumers = new HashMap<>();
+
+        if (inputRecord instanceof DTLSInputRecord dtlsInputRecord) {
+            dtlsInputRecord.setTransportContext(this);
+            dtlsInputRecord.setSSLContext(this.sslContext);
+        }
     }
 
     // Dispatch plaintext to a specific consumer.
@@ -272,7 +270,7 @@ final class TransportContext implements ConnectionContext {
             try {
                 outputRecord.encodeAlert(Alert.Level.WARNING.level, alert.id);
             } catch (IOException ioe) {
-                if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+                if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                     SSLLogger.warning(
                         "Warning: failed to send warning alert " + alert, ioe);
                 }
@@ -332,7 +330,7 @@ final class TransportContext implements ConnectionContext {
         // so we'll do it here.
         if (closeReason != null) {
             if (cause == null) {
-                if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+                if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                     SSLLogger.warning(
                             "Closed transport, general or untracked problem");
                 }
@@ -343,7 +341,7 @@ final class TransportContext implements ConnectionContext {
             if (cause instanceof SSLException) {
                 throw (SSLException)cause;
             } else {    // unlikely, but just in case.
-                if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+                if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                     SSLLogger.warning(
                             "Closed transport, unexpected rethrowing", cause);
                 }
@@ -366,7 +364,7 @@ final class TransportContext implements ConnectionContext {
         }
 
         // shutdown the transport
-        if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+        if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
             SSLLogger.severe("Fatal (" + alert + "): " + diagnostic, cause);
         }
 
@@ -382,7 +380,7 @@ final class TransportContext implements ConnectionContext {
         try {
             inputRecord.close();
         } catch (IOException ioe) {
-            if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+            if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                 SSLLogger.warning("Fatal: input record closure failed", ioe);
             }
 
@@ -413,7 +411,7 @@ final class TransportContext implements ConnectionContext {
             try {
                 outputRecord.encodeAlert(Alert.Level.FATAL.level, alert.id);
             } catch (IOException ioe) {
-                if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+                if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                     SSLLogger.warning(
                         "Fatal: failed to send fatal alert " + alert, ioe);
                 }
@@ -426,7 +424,7 @@ final class TransportContext implements ConnectionContext {
         try {
             outputRecord.close();
         } catch (IOException ioe) {
-            if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+            if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                 SSLLogger.warning("Fatal: output record closure failed", ioe);
             }
 
@@ -442,7 +440,7 @@ final class TransportContext implements ConnectionContext {
         try {
             transport.shutdown();
         } catch (IOException ioe) {
-            if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+            if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                 SSLLogger.warning("Fatal: transport closure failed", ioe);
             }
 
@@ -473,7 +471,7 @@ final class TransportContext implements ConnectionContext {
          * default ones.
          */
         if (sslConfig.isClientMode != useClientMode) {
-            if (sslContext.isDefaultProtocolVesions(
+            if (sslContext.isDefaultProtocolVersions(
                     sslConfig.enabledProtocols)) {
                 sslConfig.enabledProtocols =
                         sslContext.getDefaultProtocolVersions(!useClientMode);
@@ -489,6 +487,10 @@ final class TransportContext implements ConnectionContext {
         }
 
         isUnsureMode = false;
+    }
+
+    public void setQuic(boolean quic) {
+        sslConfig.setQuic(quic);
     }
 
     // The OutputRecord is closed and not buffered output record.
@@ -524,7 +526,7 @@ final class TransportContext implements ConnectionContext {
                 passiveInboundClose();
             }
         } catch (IOException ioe) {
-            if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+            if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                 SSLLogger.warning("inbound closure failed", ioe);
             }
         }
@@ -581,7 +583,7 @@ final class TransportContext implements ConnectionContext {
         try {
              initiateOutboundClose();
         } catch (IOException ioe) {
-            if (SSLLogger.isOn && SSLLogger.isOn("ssl")) {
+            if (SSLLogger.isOn() && SSLLogger.isOn("ssl")) {
                 SSLLogger.warning("outbound closure failed", ioe);
             }
         }
@@ -672,34 +674,22 @@ final class TransportContext implements ConnectionContext {
     // A separate thread is allocated to deliver handshake completion
     // events.
     private static class NotifyHandshake implements Runnable {
-        @SuppressWarnings("removal")
-        private final Set<Map.Entry<HandshakeCompletedListener,
-                AccessControlContext>> targets;         // who gets notified
+        private final Set<HandshakeCompletedListener>
+                                       targets;         // who gets notified
         private final HandshakeCompletedEvent event;    // the notification
 
         NotifyHandshake(
-                @SuppressWarnings("removal")
-                Map<HandshakeCompletedListener,AccessControlContext> listeners,
+                Set<HandshakeCompletedListener> listeners,
                 HandshakeCompletedEvent event) {
-            this.targets = new HashSet<>(listeners.entrySet());     // clone
+            this.targets = new HashSet<>(listeners);     // clone
             this.event = event;
         }
 
-        @SuppressWarnings("removal")
         @Override
         public void run() {
             // Don't need to synchronize, as it only runs in one thread.
-            for (Map.Entry<HandshakeCompletedListener,
-                    AccessControlContext> entry : targets) {
-                final HandshakeCompletedListener listener = entry.getKey();
-                AccessControlContext acc = entry.getValue();
-                AccessController.doPrivileged(new PrivilegedAction<Void>() {
-                    @Override
-                    public Void run() {
-                        listener.handshakeCompleted(event);
-                        return null;
-                    }
-                }, acc);
+            for (HandshakeCompletedListener listener : targets) {
+                listener.handshakeCompleted(event);
             }
         }
     }

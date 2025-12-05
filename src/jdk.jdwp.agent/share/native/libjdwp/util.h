@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -90,12 +90,7 @@ typedef struct {
     jboolean doerrorexit;
     jboolean modifiedUtf8;
     jboolean quiet;
-
-    /* Debug flags (bit mask) */
-    int      debugflags;
-
-    /* Possible debug flags */
-    #define USE_ITERATE_THROUGH_HEAP 0X001
+    jboolean jvmti_data_dump; /* If true, then support JVMTI DATA_DUMP_REQUEST events. */
 
     char * options;
 
@@ -385,13 +380,20 @@ jvmtiError allNestedClasses(jclass clazz, jclass **ppnested, jint *pcount);
 
 void setAgentPropertyValue(JNIEnv *env, char *propertyName, char* propertyValue);
 
+#ifdef DEBUG
+// APIs that can be called when debugging the debug agent
+char* translateThreadState(jint flags);
+char* getThreadName(jthread thread);
+char* getMethodName(jmethodID method);
+void printStackTrace(jthread thread);
+void printThreadInfo(jthread thread);
+#endif
+
 void *jvmtiAllocate(jint numBytes);
 void jvmtiDeallocate(void *buffer);
 
 void             eventIndexInit(void);
-#ifdef DEBUG
 char*            eventIndex2EventName(EventIndex ei);
-#endif
 jdwpEvent        eventIndex2jdwp(EventIndex i);
 jvmtiEvent       eventIndex2jvmti(EventIndex i);
 EventIndex       jdwp2EventIndex(jdwpEvent eventType);

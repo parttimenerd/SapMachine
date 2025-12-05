@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,7 +36,6 @@ import java.net.Socket;
 import javax.net.ssl.SSLSocket;
 
 import javax.naming.CommunicationException;
-import javax.naming.ServiceUnavailableException;
 import javax.naming.NamingException;
 import javax.naming.InterruptedNamingException;
 
@@ -44,8 +43,6 @@ import javax.naming.ldap.Control;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
@@ -122,17 +119,15 @@ import javax.security.sasl.SaslException;
 public final class Connection implements Runnable {
 
     private static final boolean debug = false;
-    private static final int dump = 0; // > 0 r, > 1 rw
-
 
     private final Thread worker;    // Initialized in constructor
 
-    private boolean v3 = true;       // Set in setV3()
+    private boolean v3 = true;     // Set in setV3()
 
     public final String host;  // used by LdapClient for generating exception messages
-                         // used by StartTlsResponse when creating an SSL socket
+                               // used by StartTlsResponse when creating an SSL socket
     public final int port;     // used by LdapClient for generating exception messages
-                         // used by StartTlsResponse when creating an SSL socket
+                               // used by StartTlsResponse when creating an SSL socket
 
     private boolean bound = false;   // Set in setBound()
 
@@ -185,10 +180,8 @@ public final class Connection implements Runnable {
             = hostnameVerificationDisabledValue();
 
     private static boolean hostnameVerificationDisabledValue() {
-        PrivilegedAction<String> act = () -> System.getProperty(
+        String prop = System.getProperty(
                 "com.sun.jndi.ldap.object.disableEndpointIdentification");
-        @SuppressWarnings("removal")
-        String prop = AccessController.doPrivileged(act);
         if (prop == null) {
             return false;
         }
@@ -261,7 +254,7 @@ public final class Connection implements Runnable {
             throw ce;
         }
 
-        worker = Obj.helper.createThread(this);
+        worker = new Thread(this);
         worker.setDaemon(true);
         worker.start();
     }
@@ -315,7 +308,8 @@ public final class Connection implements Runnable {
             }
             @SuppressWarnings("unchecked")
             Class<? extends SocketFactory> socketFactoryClass =
-                    (Class<? extends SocketFactory>) Obj.helper.loadClass(socketFactoryName);
+                    (Class<? extends SocketFactory>) Class.forName(socketFactoryName,
+                            true, Thread.currentThread().getContextClassLoader());
             Method getDefault =
                     socketFactoryClass.getMethod("getDefault");
             SocketFactory factory = (SocketFactory) getDefault.invoke(null, new Object[]{});
@@ -324,30 +318,37 @@ public final class Connection implements Runnable {
     }
 
     private Socket createConnectionSocket(String host, int port, SocketFactory factory,
-                                          int connectTimeout) throws Exception {
+                                          int connectTimeout) throws IOException {
         Socket socket = null;
 
+        // if timeout is supplied, try to use unconnected socket for connecting with timeout
         if (connectTimeout > 0) {
-            // create unconnected socket and then connect it if timeout
-            // is supplied
-            InetSocketAddress endpoint =
-                    createInetSocketAddress(host, port);
-            // unconnected socket
-            socket = factory.createSocket();
-            // connect socket with a timeout
-            socket.connect(endpoint, connectTimeout);
             if (debug) {
-                System.err.println("Connection: creating socket with " +
-                        "a connect timeout");
+                System.err.println("Connection: creating socket with a connect timeout");
+            }
+            try {
+                // unconnected socket
+                socket = factory.createSocket();
+            } catch (IOException e) {
+                // unconnected socket is likely not supported by the SocketFactory
+                if (debug) {
+                    System.err.println("Connection: unconnected socket not supported by SocketFactory");
+                }
+            }
+            if (socket != null) {
+                InetSocketAddress endpoint = createInetSocketAddress(host, port);
+                // connect socket with a timeout
+                socket.connect(endpoint, connectTimeout);
             }
         }
+
+        // either no timeout was supplied or unconnected socket did not work
         if (socket == null) {
             // create connected socket
-            socket = factory.createSocket(host, port);
             if (debug) {
-                System.err.println("Connection: creating connected socket with" +
-                        " no connect timeout");
+                System.err.println("Connection: creating connected socket with no connect timeout");
             }
+            socket = factory.createSocket(host, port);
         }
         return socket;
     }
@@ -356,7 +357,7 @@ public final class Connection implements Runnable {
     // the SSL handshake following socket connection as part of the timeout.
     // So explicitly set a socket read timeout, trigger the SSL handshake,
     // then reset the timeout.
-    private void initialSSLHandshake(SSLSocket sslSocket , int connectTimeout) throws Exception {
+    private void initialSSLHandshake(SSLSocket sslSocket, int connectTimeout) throws Exception {
 
             if (!IS_HOSTNAME_VERIFICATION_DISABLED) {
                 SSLParameters param = sslSocket.getSSLParameters();
@@ -437,53 +438,22 @@ public final class Connection implements Runnable {
      * Reads a reply; waits until one is ready.
      */
     BerDecoder readReply(LdapRequest ldr) throws NamingException {
-        BerDecoder rber;
-
-        // If socket closed, don't even try
-        lock.lock();
-        try {
-            if (sock == null) {
-                throw new ServiceUnavailableException(host + ":" + port +
-                    "; socket closed");
-            }
-        } finally {
-            lock.unlock();
-        }
-
-        IOException ioException = null;
         try {
             // if no timeout is set so we wait infinitely until
             // a response is received OR until the connection is closed or cancelled
             // http://docs.oracle.com/javase/8/docs/technotes/guides/jndi/jndi-ldap.html#PROP
-            rber = ldr.getReplyBer(readTimeout);
+            return ldr.getReplyBer(readTimeout);
         } catch (InterruptedException ex) {
             throw new InterruptedNamingException(
                 "Interrupted during LDAP operation");
         } catch (IOException ioe) {
-            // Connection is timed out OR closed/cancelled
-            // getReplyBer throws IOException when the requests needs to be abandoned
-            ioException = ioe;
-            rber = null;
-        }
-
-        if (rber == null) {
+            // getReplyBer() throws IOException when request needs to be abandoned
             abandonRequest(ldr, null);
-        }
-        // ioException can be not null in the following cases:
-        //  a) The response is timed-out
-        //  b) LDAP request connection has been closed
-        // If the request has been cancelled - CommunicationException is
-        // thrown directly from LdapRequest.getReplyBer, since there is no
-        // need to abandon request.
-        // The exception message is initialized in LdapRequest::getReplyBer
-        if (ioException != null) {
-            // Throw CommunicationException after all cleanups are done
-            String message = ioException.getMessage();
-            var ce = new CommunicationException(message);
-            ce.initCause(ioException);
+            // rethrow as CommunicationException (which is a NamingException)
+            var ce = new CommunicationException(ioe.getMessage());
+            ce.initCause(ioe);
             throw ce;
         }
-        return rber;
     }
 
     ////////////////////////////////////////////////////////////////////////////

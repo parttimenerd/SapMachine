@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -102,12 +102,6 @@ public class ToolBox {
     public static final String testSrc = System.getProperty("test.src");
     /** The location of the test JDK for this test, or null if not set. */
     public static final String testJDK = System.getProperty("test.jdk");
-    /** The timeout factor for slow systems. */
-    public static final float timeoutFactor;
-    static {
-        String ttf = System.getProperty("test.timeout.factor");
-        timeoutFactor = (ttf == null) ? 1.0f : Float.parseFloat(ttf);
-    }
 
     /** The current directory. */
     public static final Path currDir = Path.of(".");
@@ -482,8 +476,8 @@ public class ToolBox {
         throw new IOException("File not deleted: " + path);
     }
 
-    private static final int RETRY_DELETE_MILLIS = isWindows() ? (int)(500 * timeoutFactor): 0;
-    private static final int MAX_RETRY_DELETE_MILLIS = isWindows() ? (int)(15 * 1000 * timeoutFactor) : 0;
+    private static final int RETRY_DELETE_MILLIS = isWindows() ? 500 : 0;
+    private static final int MAX_RETRY_DELETE_MILLIS = isWindows() ? 60 * 1000 : 0;
 
     /**
      * Moves a file.
@@ -747,6 +741,8 @@ public class ToolBox {
 
         private final static Pattern commentPattern =
                 Pattern.compile("(?s)(\\s+//.*?\n|/\\*.*?\\*/)");
+        private final static Pattern importModulePattern =
+                Pattern.compile("import\\s+module\\s+(((?:\\w+\\.)*)\\w+);");
         private final static Pattern modulePattern =
                 Pattern.compile("module\\s+((?:\\w+\\.)*)");
         private final static Pattern packagePattern =
@@ -761,15 +757,10 @@ public class ToolBox {
          * declarations from which the name is derived.
          */
         static String getJavaFileNameFromSource(String source) {
-            StringBuilder sb = new StringBuilder();
-            Matcher matcher = commentPattern.matcher(source);
-            int start = 0;
-            while (matcher.find()) {
-                sb.append(source, start, matcher.start());
-                start = matcher.end();
-            }
-            sb.append(source.substring(start));
-            source = sb.toString();
+            source = removeMatchingSpans(source, commentPattern);
+            source = removeMatchingSpans(source, importModulePattern);
+
+            Matcher matcher;
 
             String packageName = null;
 
@@ -794,6 +785,20 @@ public class ToolBox {
                 throw new Error("Could not extract the java class " +
                         "name from the provided source");
             }
+        }
+
+        static String removeMatchingSpans(String source, Pattern toRemove) {
+            StringBuilder sb = new StringBuilder();
+            Matcher matcher = toRemove.matcher(source);
+            int start = 0;
+
+            while (matcher.find()) {
+                sb.append(source, start, matcher.start());
+                start = matcher.end();
+            }
+
+            sb.append(source.substring(start));
+            return sb.toString();
         }
     }
 

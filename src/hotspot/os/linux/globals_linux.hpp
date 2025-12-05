@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,17 +32,8 @@
                          develop_pd,                                    \
                          product,                                       \
                          product_pd,                                    \
-                         notproduct,                                    \
                          range,                                         \
                          constraint)                                    \
-                                                                        \
-  product(bool, UseOprofile, false,                                     \
-        "enable support for Oprofile profiler")                         \
-                                                                        \
-  /*  NB: The default value of UseLinuxPosixThreadCPUClocks may be   */ \
-  /* overridden in Arguments::parse_each_vm_init_arg.                */ \
-  product(bool, UseLinuxPosixThreadCPUClocks, true,                     \
-          "enable fast Linux Posix clocks where available")             \
                                                                         \
   product(bool, UseTransparentHugePages, false,                         \
           "Use MADV_HUGEPAGE for large pages")                          \
@@ -81,10 +72,10 @@
          "<sapmachine_himemalert>_pid<pid>_<timestamp>.log\".")         \
   product(size_t, HiMemReportMax, 0,                                    \
          "Overrides the maximum reference size for HiMemReport.")       \
-  product(ccstr, HiMemReportDir, NULL,                                  \
+  product(ccstr, HiMemReportDir, nullptr,                               \
          "Specifies a directory into which reports are written. Gets "  \
          "created (one level only) if it does not exist.")              \
-  product(ccstr, HiMemReportExec, NULL,                                 \
+  product(ccstr, HiMemReportExec, nullptr,                              \
          "Specifies one or more jcmds to be executed after a high "     \
          "memory report has been written. Multiple commands are "       \
          "separated by ';'. Command output is written to stderr. If "   \
@@ -97,17 +88,14 @@
          "omitted.\n"                                                  \
          "Example: \"-XX:HiMemReportExec=GC.class_histogram -all;GC.heap_dump\"") \
                                                                         \
+  /* SapMachine 2025-11-24: Configurable limit of malloc arenas */      \
+  product(int, GlibcMallocArenas, 1,                                    \
+          "Limit glibc malloc arenas, 0 means use OS default, "         \
+          "1 minimizes memory utilization (our default)")               \
+                                                                        \
   product(bool, UseCpuAllocPath, false, DIAGNOSTIC,                     \
           "Use CPU_ALLOC code path in os::active_processor_count ")     \
                                                                         \
-  /* SapMachine 2021-09-01: malloc-trace */                             \
-  product(bool, EnableMallocTrace, false, DIAGNOSTIC,                   \
-          "Enable malloc trace at VM initialization")                   \
-                                                                        \
-  /* SapMachine 2021-09-01: malloc-trace */                             \
-  product(bool, PrintMallocTraceAtExit, false, DIAGNOSTIC,              \
-          "Print Malloc Trace upon VM exit")                            \
-																	                                      \
   product(bool, DumpPerfMapAtExit, false, DIAGNOSTIC,                   \
           "Write map file for Linux perf tool at exit")                 \
                                                                         \
@@ -133,7 +121,14 @@
   product(bool, UseMadvPopulateWrite, true, DIAGNOSTIC,                 \
           "Use MADV_POPULATE_WRITE in os::pd_pretouch_memory.")         \
                                                                         \
-
+  product(bool, PrintMemoryMapAtExit, false, DIAGNOSTIC,                \
+          "Print an annotated memory map at exit")                      \
+                                                                        \
+  develop(intx, CompileTaskTimeout, 0,                                  \
+          "Set the timeout for compile tasks' CPU time in milliseconds."\
+          " 0 = no timeout (default)")                                  \
+          range(0,1000000)                                              \
+                                                                        \
 // end of RUNTIME_OS_FLAGS
 
 //

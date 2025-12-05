@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,14 +43,13 @@
 #include "gc/shenandoah/shenandoah_globals.hpp"
 #endif
 #if INCLUDE_ZGC
-#include "gc/z/shared/z_shared_globals.hpp"
+#include "gc/z/z_globals.hpp"
 #endif
 
 #define GC_FLAGS(develop,                                                   \
                  develop_pd,                                                \
                  product,                                                   \
                  product_pd,                                                \
-                 notproduct,                                                \
                  range,                                                     \
                  constraint)                                                \
                                                                             \
@@ -59,7 +58,6 @@
     develop_pd,                                                             \
     product,                                                                \
     product_pd,                                                             \
-    notproduct,                                                             \
     range,                                                                  \
     constraint))                                                            \
                                                                             \
@@ -68,7 +66,6 @@
     develop_pd,                                                             \
     product,                                                                \
     product_pd,                                                             \
-    notproduct,                                                             \
     range,                                                                  \
     constraint))                                                            \
                                                                             \
@@ -77,7 +74,6 @@
     develop_pd,                                                             \
     product,                                                                \
     product_pd,                                                             \
-    notproduct,                                                             \
     range,                                                                  \
     constraint))                                                            \
                                                                             \
@@ -86,7 +82,6 @@
     develop_pd,                                                             \
     product,                                                                \
     product_pd,                                                             \
-    notproduct,                                                             \
     range,                                                                  \
     constraint))                                                            \
                                                                             \
@@ -95,16 +90,14 @@
     develop_pd,                                                             \
     product,                                                                \
     product_pd,                                                             \
-    notproduct,                                                             \
     range,                                                                  \
     constraint))                                                            \
                                                                             \
-  ZGC_ONLY(GC_Z_SHARED_FLAGS(                                               \
+  ZGC_ONLY(GC_Z_FLAGS(                                                      \
     develop,                                                                \
     develop_pd,                                                             \
     product,                                                                \
     product_pd,                                                             \
-    notproduct,                                                             \
     range,                                                                  \
     constraint))                                                            \
                                                                             \
@@ -124,9 +117,6 @@
                                                                             \
   product(bool, UseZGC, false,                                              \
           "Use the Z garbage collector")                                    \
-                                                                            \
-  product(bool, ZGenerational, false,                                       \
-          "Use the generational version of ZGC")                            \
                                                                             \
   product(bool, UseShenandoahGC, false,                                     \
           "Use the Shenandoah garbage collector")                           \
@@ -161,17 +151,9 @@
           "Never tenure objects in eden, may tenure on overflow "           \
           "(ParallelGC only)")                                              \
                                                                             \
-  product(bool, ScavengeBeforeFullGC, true,                                 \
-          "Scavenge youngest generation before each full GC.")              \
-                                                                            \
   product(bool, ExplicitGCInvokesConcurrent, false,                         \
           "A System.gc() request invokes a concurrent collection; "         \
           "(effective only when using concurrent collectors)")              \
-                                                                            \
-  product(uintx, GCLockerRetryAllocationCount, 2, DIAGNOSTIC,               \
-          "Number of times to retry allocations when "                      \
-          "blocked by the GC locker")                                       \
-          range(0, max_uintx)                                               \
                                                                             \
   product(uint, ParallelGCBufferWastePct, 10,                               \
           "Wasted fraction of parallel allocation buffer")                  \
@@ -217,10 +199,11 @@
           range(1, (INT_MAX - 1))                                           \
                                                                             \
   product(bool, ParallelRefProcEnabled, false,                              \
-          "Enable parallel reference processing whenever possible")         \
+          "(Deprecated) Enable parallel reference processing "              \
+          "whenever possible")                                              \
                                                                             \
   product(bool, ParallelRefProcBalancingEnabled, true,                      \
-          "Enable balancing of reference processing queues")                \
+          "(Deprecated) Enable balancing of reference processing queues")   \
                                                                             \
   product(size_t, ReferencesPerThread, 1000, EXPERIMENTAL,                  \
                "Ergonomically start one thread for this amount of "         \
@@ -240,7 +223,7 @@
           "free space in this calculation. (G1 collector only)")            \
           range(0, 100)                                                     \
                                                                             \
-  notproduct(bool, ScavengeALot, false,                                     \
+  develop(bool, ScavengeALot, false,                                        \
           "Force scavenge at every Nth exit from the runtime system "       \
           "(N=ScavengeALotInterval)")                                       \
                                                                             \
@@ -248,10 +231,10 @@
           "Force full gc at every Nth exit from the runtime system "        \
           "(N=FullGCALotInterval)")                                         \
                                                                             \
-  notproduct(bool, GCALotAtAllSafepoints, false,                            \
+  develop(bool, GCALotAtAllSafepoints, false,                               \
           "Enforce ScavengeALot/GCALot at all potential safepoints")        \
                                                                             \
-  notproduct(bool, PromotionFailureALot, false,                             \
+  develop(bool, PromotionFailureALot, false,                                \
           "Use promotion failure handling on every youngest generation "    \
           "collection")                                                     \
                                                                             \
@@ -280,17 +263,19 @@
           "before pushing a continuation entry")                            \
                                                                             \
   product_pd(bool, NeverActAsServerClassMachine,                            \
-          "Never act like a server-class machine")                          \
+          "(Deprecated) Never act like a server-class machine")             \
                                                                             \
   product(bool, AlwaysActAsServerClassMachine, false,                       \
-          "Always act like a server-class machine")                         \
+          "(Deprecated) Always act like a server-class machine")            \
                                                                             \
-  product_pd(uint64_t, MaxRAM,                                              \
-          "Real memory size (in bytes) used to set maximum heap size")      \
+  product(uint64_t, MaxRAM, 0,                                              \
+          "(Deprecated) Real memory size (in bytes) used to set maximum "   \
+          "heap size")                                                      \
           range(0, 0XFFFFFFFFFFFFFFFF)                                      \
                                                                             \
   product(bool, AggressiveHeap, false,                                      \
-          "Optimize heap options for long-running memory intensive apps")   \
+          "(Deprecated) Optimize heap options for long-running memory "     \
+          "intensive apps")                                                 \
                                                                             \
   product(size_t, ErgoHeapSizeLimit, 0,                                     \
           "Maximum ergonomically set heap size (in bytes); zero means use " \
@@ -306,7 +291,7 @@
           "size on systems with small physical memory size")                \
           range(0.0, 100.0)                                                 \
                                                                             \
-  product(double, InitialRAMPercentage, 1.5625,                             \
+  product(double, InitialRAMPercentage, 0.2,                                \
           "Percentage of real memory used for initial heap size")           \
           range(0.0, 100.0)                                                 \
                                                                             \
@@ -321,54 +306,15 @@
   product(bool, UseAdaptiveSizePolicy, true,                                \
           "Use adaptive generation sizing policies")                        \
                                                                             \
-  product(bool, UsePSAdaptiveSurvivorSizePolicy, true,                      \
-          "Use adaptive survivor sizing policies")                          \
-                                                                            \
-  product(bool, UseAdaptiveGenerationSizePolicyAtMinorCollection, true,     \
-          "Use adaptive young-old sizing policies at minor collections")    \
-                                                                            \
-  product(bool, UseAdaptiveGenerationSizePolicyAtMajorCollection, true,     \
-          "Use adaptive young-old sizing policies at major collections")    \
-                                                                            \
-  product(bool, UseAdaptiveSizePolicyWithSystemGC, false,                   \
-          "Include statistics from System.gc() for adaptive size policy")   \
-                                                                            \
-  product(uint, AdaptiveSizeThroughPutPolicy, 0,                            \
-          "Policy for changing generation size for throughput goals")       \
-          range(0, 1)                                                       \
-                                                                            \
-  product(uintx, AdaptiveSizePolicyInitializingSteps, 20,                   \
-          "Number of steps where heuristics is used before data is used")   \
-          range(0, max_uintx)                                               \
-                                                                            \
   develop(uintx, AdaptiveSizePolicyReadyThreshold, 5,                       \
           "Number of collections before the adaptive sizing is started")    \
-                                                                            \
-  product(uintx, AdaptiveSizePolicyOutputInterval, 0,                       \
-          "Collection interval for printing information; zero means never") \
-          range(0, max_uintx)                                               \
-                                                                            \
-  product(bool, UseAdaptiveSizePolicyFootprintGoal, true,                   \
-          "Use adaptive minimum footprint as a goal")                       \
                                                                             \
   product(uint, AdaptiveSizePolicyWeight, 10,                               \
           "Weight given to exponential resizing, between 0 and 100")        \
           range(0, 100)                                                     \
                                                                             \
-  product(uint, AdaptiveTimeWeight,       25,                               \
-          "Weight given to time in adaptive policy, between 0 and 100")     \
-          range(0, 100)                                                     \
-                                                                            \
-  product(uint, PausePadding, 1,                                            \
-          "How much buffer to keep for pause time")                         \
-          range(0, UINT_MAX)                                                \
-                                                                            \
   product(uint, PromotedPadding, 3,                                         \
           "How much buffer to keep for promotion failure")                  \
-          range(0, UINT_MAX)                                                \
-                                                                            \
-  product(uint, SurvivorPadding, 3,                                         \
-          "How much buffer to keep for survivor overflow")                  \
           range(0, UINT_MAX)                                                \
                                                                             \
   product(uint, ThresholdTolerance, 10,                                     \
@@ -380,23 +326,11 @@
           range(0, 100)                                                     \
                                                                             \
   product(uint, YoungGenerationSizeSupplement, 80,                          \
-          "Supplement to YoungedGenerationSizeIncrement used at startup")   \
+          "Supplement to YoungGenerationSizeIncrement used at startup")     \
           range(0, 100)                                                     \
                                                                             \
   product(uintx, YoungGenerationSizeSupplementDecay, 8,                     \
-          "Decay factor to YoungedGenerationSizeSupplement")                \
-          range(1, max_uintx)                                               \
-                                                                            \
-  product(uint, TenuredGenerationSizeIncrement, 20,                         \
-          "Adaptive size percentage change in tenured generation")          \
-          range(0, 100)                                                     \
-                                                                            \
-  product(uint, TenuredGenerationSizeSupplement, 80,                        \
-          "Supplement to TenuredGenerationSizeIncrement used at startup")   \
-          range(0, 100)                                                     \
-                                                                            \
-  product(uintx, TenuredGenerationSizeSupplementDecay, 2,                   \
-          "Decay factor to TenuredGenerationSizeIncrement")                 \
+          "Decay factor to YoungGenerationSizeSupplement")                  \
           range(1, max_uintx)                                               \
                                                                             \
   product(uintx, MaxGCPauseMillis, max_uintx - 1,                           \
@@ -417,26 +351,15 @@
           "Adaptive size scale down factor for shrinking")                  \
           range(1, max_uintx)                                               \
                                                                             \
-  product(bool, UseAdaptiveSizeDecayMajorGCCost, true,                      \
-          "Adaptive size decays the major cost for long major intervals")   \
-                                                                            \
-  product(uintx, AdaptiveSizeMajorGCDecayTimeScale, 10,                     \
-          "Time scale over which major costs decay")                        \
-          range(0, max_uintx)                                               \
-                                                                            \
   product(uintx, MinSurvivorRatio, 3,                                       \
           "Minimum ratio of young generation/survivor space size")          \
           range(3, max_uintx)                                               \
                                                                             \
   product(uintx, InitialSurvivorRatio, 8,                                   \
           "Initial ratio of young generation/survivor space size")          \
-          range(0, max_uintx)                                               \
+          range(3, max_uintx)                                               \
                                                                             \
-  product(size_t, BaseFootPrintEstimate, 256*M,                             \
-          "Estimate of footprint other than Java Heap")                     \
-          range(0, max_uintx)                                               \
-                                                                            \
-  product(bool, UseGCOverheadLimit, true,                                   \
+  product(bool, UseGCOverheadLimit, falseInDebug,                           \
           "Use policy to limit of proportion of time spent in GC "          \
           "before an OutOfMemory error is thrown")                          \
                                                                             \
@@ -497,18 +420,8 @@
           "dictionary, classloader_data_graph, metaspace, jni_handles, "    \
           "codecache_oops, resolved_method_table, stringdedup")             \
                                                                             \
-  product(bool, DeferInitialCardMark, false, DIAGNOSTIC,                    \
-          "When +ReduceInitialCardMarks, explicitly defer any that "        \
-          "may arise from new_pre_store_barrier")                           \
-                                                                            \
   product(bool, UseCondCardMark, false,                                     \
           "Check for already marked card before updating card table")       \
-                                                                            \
-  product(bool, VerifyRememberedSets, false, DIAGNOSTIC,                    \
-          "Verify GC remembered sets")                                      \
-                                                                            \
-  product(bool, VerifyObjectStartArray, true, DIAGNOSTIC,                   \
-          "Verify GC object start array if verify before/after")            \
                                                                             \
   product(bool, DisableExplicitGC, false,                                   \
           "Ignore calls to System.gc()")                                    \
@@ -526,16 +439,16 @@
           "number of milliseconds")                                         \
           range(0, max_intx)                                                \
                                                                             \
-  notproduct(int, ScavengeALotInterval,     1,                              \
+  develop(int, ScavengeALotInterval,     1,                                 \
           "Interval between which scavenge will occur with +ScavengeALot")  \
                                                                             \
-  notproduct(int, FullGCALotInterval,     1,                                \
+  develop(int, FullGCALotInterval,     1,                                   \
           "Interval between which full gc will occur with +FullGCALot")     \
                                                                             \
-  notproduct(int, FullGCALotStart,     0,                                   \
+  develop(int, FullGCALotStart,     0,                                      \
           "For which invocation to start FullGCAlot")                       \
                                                                             \
-  notproduct(int, FullGCALotDummies,  32*K,                                 \
+  develop(int, FullGCALotDummies,  32*K,                                    \
           "Dummy object allocated with +FullGCALot, forcing all objects "   \
           "to move")                                                        \
                                                                             \
@@ -556,10 +469,6 @@
           "Soft limit for maximum heap size (in bytes)")                    \
           constraint(SoftMaxHeapSizeConstraintFunc,AfterMemoryInit)         \
                                                                             \
-  product(size_t, OldSize, ScaleForWordSize(4*M),                           \
-          "Initial tenured generation size (in bytes)")                     \
-          range(0, max_uintx)                                               \
-                                                                            \
   product(size_t, NewSize, ScaleForWordSize(1*M),                           \
           "Initial new generation size (in bytes)")                         \
           constraint(NewSizeConstraintFunc,AfterErgo)                       \
@@ -572,11 +481,6 @@
   product_pd(size_t, HeapBaseMinAddress,                                    \
           "OS specific low limit for heap base address")                    \
           constraint(HeapBaseMinAddressConstraintFunc,AfterErgo)            \
-                                                                            \
-  product(size_t, PretenureSizeThreshold, 0,                                \
-          "Maximum size in bytes of objects allocated in DefNew "           \
-          "generation; zero means no maximum")                              \
-          range(0, max_uintx)                                               \
                                                                             \
   product(uintx, SurvivorRatio, 8,                                          \
           "Ratio of eden/survivor space size")                              \
@@ -617,12 +521,11 @@
                                                                             \
   product(uint, MarkSweepDeadRatio,     5,                                  \
           "Percentage (0-100) of the old gen allowed as dead wood. "        \
-          "Serial mark sweep treats this as both the minimum and maximum "  \
+          "Serial full gc treats this as both the minimum and maximum "     \
           "value. "                                                         \
-          "Par compact uses a variable scale based on the density of the "  \
-          "generation and treats this as the maximum value when the heap "  \
-          "is either completely full or completely empty.  Par compact "    \
-          "also has a smaller default value; see arguments.cpp. "           \
+          "Parallel full gc treats this as maximum value, i.e. when "       \
+          "allowing dead wood, Parallel full gc wastes at most this amount "\
+          "of space."                                                       \
           "G1 full gc treats this as an allowed garbage threshold to skip " \
           "compaction of heap regions, i.e. if a heap region has less "     \
           "garbage than this value, then the region will not be compacted"  \
@@ -633,9 +536,6 @@
           "How often should we fully compact the heap (ignoring the dead "  \
           "space parameters)")                                              \
           range(1, UINT_MAX)                                                \
-                                                                            \
-  develop(uintx, GCExpandToAllocateDelayMillis, 0,                          \
-          "Delay between expansion and allocation (in milliseconds)")       \
                                                                             \
   product(uint, GCDrainStackTargetSize, 64,                                 \
           "Number of entries we will try to leave on the stack "            \

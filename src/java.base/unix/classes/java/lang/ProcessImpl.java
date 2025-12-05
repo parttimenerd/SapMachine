@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,14 +42,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import jdk.internal.access.JavaIOFileDescriptorAccess;
 import jdk.internal.access.SharedSecrets;
 import jdk.internal.util.OperatingSystem;
 import jdk.internal.util.StaticProperty;
-import sun.security.action.GetPropertyAction;
 
 /**
  * java.lang.Process subclass in the UNIX environment.
@@ -95,7 +91,7 @@ final class ProcessImpl extends Process {
      * @throws Error if the requested launch mechanism is not found or valid
      */
     private static LaunchMechanism launchMechanism() {
-        String s = GetPropertyAction.privilegedGetProperty("jdk.lang.Process.launchMechanism");
+        String s = System.getProperty("jdk.lang.Process.launchMechanism");
         if (s == null) {
             return LaunchMechanism.POSIX_SPAWN;
         }
@@ -104,16 +100,26 @@ final class ProcessImpl extends Process {
             // Should be value of a LaunchMechanism enum
             LaunchMechanism lm = LaunchMechanism.valueOf(s.toUpperCase(Locale.ROOT));
             switch (OperatingSystem.current()) {
-                case LINUX:
-                    return lm;      // All options are valid for Linux
+                case LINUX: {
+                    // All options are valid for Linux, but VFORK is deprecated and results
+                    // in a warning
+                    if (lm == LaunchMechanism.VFORK) {
+                        System.err.println("VFORK MODE DEPRECATED");
+                        System.err.println("""
+                                          The VFORK launch mechanism has been deprecated for being dangerous.
+                                          It will be removed in a future java version. Either remove the
+                                          jdk.lang.Process.launchMechanism property (preferred) or use FORK mode
+                                          instead (-Djdk.lang.Process.launchMechanism=FORK).
+                                          """);
+                    }
+                    return lm;
+                }
                 case AIX:
                 case MACOS:
                     if (lm != LaunchMechanism.VFORK) {
                         return lm; // All but VFORK are valid
                     }
                     break;
-                case WINDOWS:
-                    // fall through to throw to Error
             }
         } catch (IllegalArgumentException e) {
         }
@@ -142,7 +148,9 @@ final class ProcessImpl extends Process {
                          java.util.Map<String,String> environment,
                          String dir,
                          ProcessBuilder.Redirect[] redirects,
-                         boolean redirectErrorStream)
+                         boolean redirectErrorStream,
+                         // SapMachine 2024-06-12: process group extension
+                         boolean createNewProcessGroupOnSpawn)
             throws IOException
     {
         assert cmdarray != null && cmdarray.length > 0;
@@ -225,7 +233,9 @@ final class ProcessImpl extends Process {
                             toCString(dir),
                             std_fds,
                             forceNullOutputStream,
-                            redirectErrorStream);
+                            redirectErrorStream,
+                            // SapMachine 2024-06-12: process group extension
+                            createNewProcessGroupOnSpawn);
             if (redirects != null) {
                 // Copy the fd's if they are to be redirected to another process
                 if (std_fds[0] >= 0 &&
@@ -279,17 +289,20 @@ final class ProcessImpl extends Process {
                                    byte[] envBlock, int envc,
                                    byte[] dir,
                                    int[] fds,
-                                   boolean redirectErrorStream)
+                                   boolean redirectErrorStream,
+                                   // SapMachine 2024-06-12: process group extension
+                                   boolean createNewProcessGroupOnSpawn)
         throws IOException;
 
-    @SuppressWarnings("removal")
     private ProcessImpl(final byte[] prog,
                 final byte[] argBlock, final int argc,
                 final byte[] envBlock, final int envc,
                 final byte[] dir,
                 final int[] fds,
                 final boolean forceNullOutputStream,
-                final boolean redirectErrorStream)
+                final boolean redirectErrorStream,
+                // SapMachine 2024-06-12: process group extension
+                final boolean createNewProcessGroupOnSpawn)
             throws IOException {
 
         pid = forkAndExec(launchMechanism.ordinal() + 1,
@@ -299,17 +312,12 @@ final class ProcessImpl extends Process {
                           envBlock, envc,
                           dir,
                           fds,
-                          redirectErrorStream);
+                          redirectErrorStream,
+                          // SapMachine 2024-06-12: process group extension
+                          createNewProcessGroupOnSpawn);
         processHandle = ProcessHandleImpl.getInternal(pid);
 
-        try {
-            AccessController.doPrivileged((PrivilegedExceptionAction<Void>) () -> {
-                initStreams(fds, forceNullOutputStream);
-                return null;
-            });
-        } catch (PrivilegedActionException ex) {
-            throw (IOException) ex.getCause();
-        }
+        initStreams(fds, forceNullOutputStream);
     }
 
     static FileDescriptor newFileDescriptor(int fd) {
@@ -507,11 +515,6 @@ final class ProcessImpl extends Process {
 
     @Override
     public ProcessHandle toHandle() {
-        @SuppressWarnings("removal")
-        SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
-            sm.checkPermission(new RuntimePermission("manageProcess"));
-        }
         return processHandle;
     }
 
@@ -560,6 +563,16 @@ final class ProcessImpl extends Process {
     }
 
     private static native void init();
+
+    // SapMachine 2024-07-01: process group extension
+    private static native int terminateProcessGroup(long pid, boolean force);
+
+    void terminateProcessGroup(boolean force) throws IOException {
+        int rc = terminateProcessGroup(pid, force);
+        if (rc != 0) {
+            throw new IOException("Failed to kill process group (errno = " + rc + ")");
+        }
+    }
 
     static {
         init();
@@ -626,7 +639,7 @@ final class ProcessImpl extends Process {
      */
     private static class ProcessPipeOutputStream extends BufferedOutputStream {
         ProcessPipeOutputStream(int fd) {
-            super(new FileOutputStream(newFileDescriptor(fd)));
+            super(new PipeOutputStream(newFileDescriptor(fd)));
         }
 
         /** Called by the process reaper thread when the process exits. */

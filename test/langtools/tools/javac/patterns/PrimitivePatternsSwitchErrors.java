@@ -1,6 +1,6 @@
 /*
  * @test /nodynamiccopyright/
- * @bug 8304487 8325653
+ * @bug 8304487 8325653 8332463
  * @summary Compiler Implementation for Primitive types in patterns, instanceof, and switch (Preview)
  * @enablePreview
  * @compile/fail/ref=PrimitivePatternsSwitchErrors.out -XDrawDiagnostics -XDshould-stop.at=FLOW PrimitivePatternsSwitchErrors.java
@@ -240,5 +240,94 @@ public class PrimitivePatternsSwitchErrors {
             case byte b -> -1 ;
             case int b -> -2 ;
         };
+    }
+
+    public static int disallowedUnboxingAndNarrowing1() {
+        Long n = 42l;
+        return switch (n) { // Error - not exhaustive and not allowed
+            case char c -> -1 ;
+        };
+    }
+
+    public static int disallowedUnboxingAndNarrowing2() {
+        Long n = 42l;
+        return switch (n) { // Error - not exhaustive and not allowed
+            case int c -> -1 ;
+        };
+    }
+
+    public static char disallowedUnboxingAndWidening(Short test) {
+        return switch (test) {
+            case char c -> c; // Error - not exhaustive and not allowed
+        };
+    }
+
+    public static <T extends Integer> boolean wideningReferenceConversionUnboxingAndNarrowingPrimitive(T i) {
+        return i instanceof byte b;  // not allowed as a conversion
+    }
+
+    public static void dominanceIntFloat() {
+        int ii = 42;
+        switch (ii) {
+            case int i -> {}
+            case float f -> {} // Error - dominated!
+        }
+    }
+
+    public static void noDominanceIntFloat() {
+        int ii = 42;
+        switch (ii) {
+            case float f -> {}
+            case int i -> {} // ok
+        }
+    }
+
+    public static void strengtheningDominance() {
+        byte x = 42;
+        switch (x) {
+            case short s -> {}
+            case 42      -> {}    // error: dominated
+        }
+
+        long l = 42l;
+        switch (l) {
+            case short s -> {}
+            case 42l     -> {}    // error: dominated
+            case long _  -> {}
+        }
+
+        char c = 'a';
+        switch (c) {
+            case short s -> {}
+            case 42      -> {}    // error: dominated
+            case char _  -> {}
+        }
+
+        int x2 = 42;
+        switch(x2) {
+            case float f -> {}
+            case 16_777_216 -> {}  // error: dominated
+            default -> {}
+        }
+
+        switch(x2) {
+            case float f -> {}
+            case 16_777_217 -> {} // OK
+            default -> {}
+        }
+
+        switch(x2) {
+            case int ii   -> {}
+            case float f -> {}    // error: dominated
+        }
+    }
+
+    public static void unconditionalFollowedByDefault() {
+        int ii = 42;
+        switch (ii) {
+            case int i -> {}
+            case float f -> {} // Error - dominated!
+            default -> {}      // Error - unconditional and default
+        }
     }
 }

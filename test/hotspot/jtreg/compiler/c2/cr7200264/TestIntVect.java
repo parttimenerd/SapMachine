@@ -410,12 +410,13 @@ public class TestIntVect {
 
     }
 
-    // Not vectorized: simple addition not profitable, see JDK-8307516. NOTE:
-    // This check does not document the _desired_ behavior of the system but
-    // the current behavior (no vectorization)
     @Test
-    @IR(counts = { IRNode.LOAD_VECTOR_I, "= 0",
-                   IRNode.STORE_VECTOR,  "= 0" })
+    @IR(counts = { IRNode.LOAD_VECTOR_I,     "> 0",
+                   IRNode.ADD_REDUCTION_VI,  "> 0",
+                   IRNode.ADD_VI,            "> 0" },
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
+    // The reduction is moved outside the loop, and we use a
+    // element-wise accumulator inside the loop.
     int test_sum(int[] a1) {
         int sum = 0;
         for (int i = 0; i < a1.length; i+=1) {
@@ -426,7 +427,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.ADD_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_addc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]+VALUE);
@@ -435,7 +436,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.ADD_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_addv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]+b);
@@ -444,7 +445,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.ADD_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_adda(int[] a0, int[] a1, int[] a2) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]+a2[i]);
@@ -453,7 +454,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.ADD_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_subc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]-VALUE);
@@ -462,7 +463,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.SUB_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_subv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]-b);
@@ -471,7 +472,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.SUB_VI, "> 0", },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_suba(int[] a0, int[] a1, int[] a2) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]-a2[i]);
@@ -480,7 +481,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.SUB_VI, "> 0", IRNode.LSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_mulc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]*VALUE);
@@ -489,7 +490,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.SUB_VI, "> 0", IRNode.LSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_mulc_n(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]*(-VALUE));
@@ -498,7 +499,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.MUL_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse4.1", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse4.1", "true", "asimd", "true", "rvv", "true"})
     void test_mulv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]*b);
@@ -507,7 +508,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.MUL_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse4.1", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse4.1", "true", "asimd", "true", "rvv", "true"})
     void test_mula(int[] a0, int[] a1, int[] a2) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]*a2[i]);
@@ -521,7 +522,7 @@ public class TestIntVect {
                    IRNode.VECTOR_SIZE + "min(max_int, max_long)", "> 0",
                    IRNode.SUB_VI,
                    IRNode.VECTOR_SIZE + "min(max_int, max_long)", "> 0" },
-        applyIfCPUFeatureOr = {"avx2", "true", "sve", "true"})
+        applyIfCPUFeatureOr = {"avx2", "true", "sve", "true", "rvv", "true"})
     // Not vectorized: On aarch64, vectorization for this example results in
     // MulVL nodes, which asimd does not support.
     @IR(counts = { IRNode.LOAD_VECTOR_I, "= 0",
@@ -541,7 +542,7 @@ public class TestIntVect {
                    IRNode.VECTOR_SIZE + "min(max_int, max_long)", "> 0",
                    IRNode.SUB_VI,
                    IRNode.VECTOR_SIZE + "min(max_int, max_long)", "> 0" },
-        applyIfCPUFeatureOr = {"avx2", "true", "sve", "true"})
+        applyIfCPUFeatureOr = {"avx2", "true", "sve", "true", "rvv", "true"})
     // Not vectorized: On aarch64, vectorization for this example results in
     // MulVL nodes, which asimd does not support.
     @IR(counts = { IRNode.LOAD_VECTOR_I, "= 0",
@@ -580,7 +581,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.AND_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_andc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]&BIT_MASK);
@@ -589,7 +590,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.AND_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_andv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]&b);
@@ -598,7 +599,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.AND_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_anda(int[] a0, int[] a1, int[] a2) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]&a2[i]);
@@ -607,7 +608,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.OR_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_orc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]|BIT_MASK);
@@ -616,7 +617,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.OR_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_orv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]|b);
@@ -625,7 +626,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.OR_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_ora(int[] a0, int[] a1, int[] a2) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]|a2[i]);
@@ -634,7 +635,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.XOR_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_xorc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]^BIT_MASK);
@@ -643,7 +644,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.XOR_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_xorv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]^b);
@@ -652,7 +653,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.XOR_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_xora(int[] a0, int[] a1, int[] a2) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]^a2[i]);
@@ -661,7 +662,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.LSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_sllc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]<<VALUE);
@@ -670,7 +671,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.LSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_sllc_n(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]<<(-VALUE));
@@ -682,7 +683,7 @@ public class TestIntVect {
     @IR(counts = { IRNode.LSHIFT_VI,     "= 0",
                    IRNode.LOAD_VECTOR_I, "> 0",
                    IRNode.STORE_VECTOR,  "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_sllc_o(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]<<SHIFT);
@@ -694,7 +695,7 @@ public class TestIntVect {
     @IR(counts = { IRNode.LSHIFT_VI,     "= 0",
                    IRNode.LOAD_VECTOR_I, "> 0",
                    IRNode.STORE_VECTOR,  "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_sllc_on(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]<<(-SHIFT));
@@ -703,7 +704,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.LSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_sllv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]<<b);
@@ -712,7 +713,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.URSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srlc(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>>VALUE);
@@ -721,7 +722,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.URSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srlc_n(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>>(-VALUE));
@@ -733,7 +734,7 @@ public class TestIntVect {
     @IR(counts = { IRNode.URSHIFT_VI,    "= 0",
                    IRNode.LOAD_VECTOR_I, "> 0",
                    IRNode.STORE_VECTOR,  "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srlc_o(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>>SHIFT);
@@ -745,7 +746,7 @@ public class TestIntVect {
     @IR(counts = { IRNode.URSHIFT_VI,    "= 0",
                    IRNode.LOAD_VECTOR_I, "> 0",
                    IRNode.STORE_VECTOR,  "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srlc_on(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>>(-SHIFT));
@@ -754,7 +755,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.URSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srlv(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>>b);
@@ -763,7 +764,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.RSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srac(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>VALUE);
@@ -772,7 +773,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.RSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srac_n(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>(-VALUE));
@@ -784,7 +785,7 @@ public class TestIntVect {
     @IR(counts = { IRNode.RSHIFT_VI,     "= 0",
                    IRNode.LOAD_VECTOR_I, "> 0",
                    IRNode.STORE_VECTOR,  "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srac_o(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>SHIFT);
@@ -796,7 +797,7 @@ public class TestIntVect {
     @IR(counts = { IRNode.RSHIFT_VI,     "= 0",
                    IRNode.LOAD_VECTOR_I, "> 0",
                    IRNode.STORE_VECTOR,  "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srac_on(int[] a0, int[] a1) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>(-SHIFT));
@@ -805,7 +806,7 @@ public class TestIntVect {
 
     @Test
     @IR(counts = { IRNode.RSHIFT_VI, "> 0" },
-        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true"})
+        applyIfCPUFeatureOr = {"sse2", "true", "asimd", "true", "rvv", "true"})
     void test_srav(int[] a0, int[] a1, int b) {
         for (int i = 0; i < a0.length; i+=1) {
             a0[i] = (int)(a1[i]>>b);

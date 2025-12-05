@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,14 +21,16 @@
  * questions.
  */
 
-import java.nio.file.Path;
+import static jdk.jpackage.internal.util.function.ThrowingConsumer.toConsumer;
 
-import jdk.jpackage.test.JPackageCommand;
-import jdk.jpackage.test.TKit;
-import jdk.jpackage.test.PackageType;
-import jdk.jpackage.test.Annotations.Test;
-import jdk.jpackage.test.Annotations.Parameter;
+import java.nio.file.Path;
 import jdk.jpackage.test.AdditionalLauncher;
+import jdk.jpackage.test.Annotations.Parameter;
+import jdk.jpackage.test.Annotations.Test;
+import jdk.jpackage.test.JPackageCommand;
+import jdk.jpackage.test.MacSign;
+import jdk.jpackage.test.PackageType;
+import jdk.jpackage.test.TKit;
 
 /**
  * Tests generation of app image and then signs generated app image with --mac-sign
@@ -46,18 +48,15 @@ import jdk.jpackage.test.AdditionalLauncher;
 /*
  * @test
  * @summary jpackage with --type app-image --app-image "appImage" --mac-sign
- * @library ../helpers
- * @library /test/lib
+ * @library /test/jdk/tools/jpackage/helpers
  * @library base
  * @build SigningBase
- * @build SigningCheck
- * @build jtreg.SkippedException
  * @build jdk.jpackage.test.*
  * @build SigningAppImageTwoStepsTest
- * @modules jdk.jpackage/jdk.jpackage.internal
- * @requires (os.family == "mac")
+ * @requires (jpackage.test.MacSignTests == "run")
  * @run main/othervm/timeout=720 -Xmx512m jdk.jpackage.test.Main
  *  --jpt-run=SigningAppImageTwoStepsTest
+ *  --jpt-before-run=SigningBase.verifySignTestEnvReady
  */
 public class SigningAppImageTwoStepsTest {
 
@@ -69,11 +68,13 @@ public class SigningAppImageTwoStepsTest {
     @Parameter({"true", "false"})
     // Unsigned
     @Parameter({"false", "true"})
-    public void test(String... testArgs) throws Exception {
-        boolean signAppImage = Boolean.parseBoolean(testArgs[0]);
-        boolean signingKey = Boolean.parseBoolean(testArgs[1]);
+    public void test(boolean signAppImage, boolean signingKey) throws Exception {
+        MacSign.withKeychain(toConsumer(keychain -> {
+            test(keychain, signAppImage, signingKey);
+        }), SigningBase.StandardKeychain.MAIN.keychain());
+    }
 
-        SigningCheck.checkCertificates(SigningBase.DEFAULT_INDEX);
+    private static void test(MacSign.ResolvedKeychain keychain, boolean signAppImage, boolean signingKey) throws Exception {
 
         Path appimageOutput = TKit.createTempDirectory("appimage");
 
@@ -85,7 +86,7 @@ public class SigningAppImageTwoStepsTest {
         if (signAppImage) {
             appImageCmd.addArguments("--mac-sign",
                     "--mac-signing-keychain",
-                    SigningBase.getKeyChain());
+                    keychain.name());
             if (signingKey) {
                 appImageCmd.addArguments("--mac-signing-key-user-name",
                     SigningBase.getDevName(SigningBase.DEFAULT_INDEX));
@@ -110,7 +111,7 @@ public class SigningAppImageTwoStepsTest {
         cmd.setPackageType(PackageType.IMAGE)
             .addArguments("--app-image", appImageCmd.outputBundle().toAbsolutePath())
             .addArguments("--mac-sign")
-            .addArguments("--mac-signing-keychain", SigningBase.getKeyChain());
+            .addArguments("--mac-signing-keychain", keychain.name());
         if (signingKey) {
             cmd.addArguments("--mac-signing-key-user-name",
                 SigningBase.getDevName(SigningBase.DEFAULT_INDEX));

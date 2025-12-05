@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -85,7 +85,6 @@ class ArrayKlass: public Klass {
   // Sizes points to the first dimension of the array, subsequent dimensions
   // are always in higher memory.  The callers of these set that up.
   virtual oop multi_allocate(int rank, jint* sizes, TRAPS);
-  objArrayOop allocate_arrayArray(int n, int length, TRAPS);
 
   // find field according to JVM spec 5.4.3.2, returns the klass in which the field is defined
   Klass* find_field(Symbol* name, Symbol* sig, fieldDescriptor* fd) const;
@@ -115,10 +114,6 @@ class ArrayKlass: public Klass {
 
   // Return a handle.
   static void     complete_create_array_klass(ArrayKlass* k, Klass* super_klass, ModuleEntry* module, TRAPS);
-
-
-  // jvm support
-  jint compute_modifier_flags() const;
 
   // JVMTI support
   jint jvmti_class_status() const;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2018, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,7 +23,6 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "asm/macroAssembler.inline.hpp"
 #include "code/compiledIC.hpp"
 #include "code/nmethod.hpp"
@@ -34,10 +33,10 @@
 
 // ----------------------------------------------------------------------------
 
-#define __ _masm.
-address CompiledDirectCall::emit_to_interp_stub(CodeBuffer &cbuf, address mark) {
-  precond(cbuf.stubs()->start() != badAddress);
-  precond(cbuf.stubs()->end() != badAddress);
+#define __ masm->
+address CompiledDirectCall::emit_to_interp_stub(MacroAssembler *masm, address mark) {
+  precond(__ code()->stubs()->start() != badAddress);
+  precond(__ code()->stubs()->end() != badAddress);
 
   // Stub is fixed up when the corresponding call is converted from
   // calling compiled code to calling interpreted code.
@@ -45,12 +44,8 @@ address CompiledDirectCall::emit_to_interp_stub(CodeBuffer &cbuf, address mark) 
   // jmp -4 # to self
 
   if (mark == nullptr) {
-    mark = cbuf.insts_mark();  // Get mark within main instrs section.
+    mark = __ inst_mark();  // Get mark within main instrs section.
   }
-
-  // Note that the code buffer's insts_mark is always relative to insts.
-  // That's why we must use the macroassembler to generate a stub.
-  MacroAssembler _masm(&cbuf);
 
   address base = __ start_a_stub(to_interp_stub_size());
   int offset = __ offset();
@@ -95,13 +90,15 @@ void CompiledDirectCall::set_to_interpreted(const methodHandle& callee, address 
     = nativeMovConstReg_at(stub + NativeInstruction::instruction_size);
 
 #ifdef ASSERT
-  NativeGeneralJump* jump = nativeGeneralJump_at(method_holder->next_instruction_address());
+  NativeJump* jump = MacroAssembler::codestub_branch_needs_far_jump()
+                         ? nativeGeneralJump_at(method_holder->next_instruction_address())
+                         : nativeJump_at(method_holder->next_instruction_address());
   verify_mt_safe(callee, entry, method_holder, jump);
 #endif
 
   // Update stub.
   method_holder->set_data((intptr_t)callee());
-  NativeGeneralJump::insert_unconditional(method_holder->next_instruction_address(), entry);
+  MacroAssembler::pd_patch_instruction(method_holder->next_instruction_address(), entry);
   ICache::invalidate_range(stub, to_interp_stub_size());
   // Update jump to call.
   set_destination_mt_safe(stub);

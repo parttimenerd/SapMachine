@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -59,13 +59,15 @@ extern void vm_shutdown_during_initialization(const char* error, const char* mes
 
 extern void vm_exit_during_cds_dumping(const char* error, const char* message = nullptr);
 
+// This is defined in linkType.cpp due to linking restraints
+extern bool is_vm_statically_linked();
+
 /**
  * With the integration of the changes to handle the version string
  * as defined by JEP-223, most of the code related to handle the version
  * string prior to JDK 1.6 was removed (partial initialization)
  */
 class JDK_Version {
-  friend class VMStructs;
   friend class Universe;
   friend void JDK_Version_init();
  private:

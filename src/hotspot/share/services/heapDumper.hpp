@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -49,7 +49,8 @@ class HeapDumper : public StackObj {
   // internal timer.
   elapsedTimer* timer()                 { return &_t; }
 
-  static void dump_heap(bool oome);
+  // SapMachine 2024-05-10: HeapDumpPath for jcmd
+  static void dump_heap(bool gc_before_heap_dump, bool oome, outputStream* out = tty, int compression = -1, bool overwrite = false, uint parallel_thread_num = default_num_of_dump_threads());
 
  public:
   HeapDumper(bool gc_before_heap_dump) :
@@ -60,8 +61,8 @@ class HeapDumper : public StackObj {
   // dumps the heap to the specified file, returns 0 if success.
   // additional info is written to out if not null.
   // compression >= 0 creates a gzipped file with the given compression level.
-  // parallel_thread_num >= 0 indicates thread numbers of parallel object dump
-  int dump(const char* path, outputStream* out = nullptr, int compression = -1, bool overwrite = false, uint parallel_thread_num = 1);
+  // parallel_thread_num >= 0 indicates thread numbers of parallel object dump.
+  int dump(const char* path, outputStream* out = nullptr, int compression = -1, bool overwrite = false, uint parallel_thread_num = default_num_of_dump_threads());
 
   // returns error message (resource allocated), or null if no error
   char* error_as_C_string() const;
@@ -69,6 +70,9 @@ class HeapDumper : public StackObj {
   static void dump_heap()    NOT_SERVICES_RETURN;
 
   static void dump_heap_from_oome()    NOT_SERVICES_RETURN;
+
+  // SapMachine 2024-05-10: HeapDumpPath for jcmd
+  static void dump_heap(bool gc_before_heap_dump, outputStream* out, int compression, bool overwrite, uint parallel_thread_num)    NOT_SERVICES_RETURN;
 
   // Parallel thread number for heap dump, initialize based on active processor count.
   static uint default_num_of_dump_threads() {

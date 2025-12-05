@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,7 +21,6 @@
  * questions.
  */
 
-#include "precompiled.hpp"
 #include "jvm.h"
 #include "logging/logLevel.hpp"
 #include "logging/logSelectionList.hpp"
@@ -30,13 +29,11 @@
 #include "logTestUtils.inline.hpp"
 #include "unittest.hpp"
 
-// SapMachine 2024-02-08
-// temporary disable this test since it is failing in SapMachine. Opened JDK-8325508 to clarify.
-// TEST(LogSelectionList, combination_limit) {
-//   size_t max_combinations = LogSelectionList::MaxSelections;
-//   EXPECT_GT(max_combinations, LogTagSet::ntagsets())
-//       << "Combination limit not sufficient for configuring all available tag sets";
-// }
+TEST(LogSelectionList, combination_limit) {
+  size_t max_combinations = LogSelectionList::MaxSelections;
+  EXPECT_GT(max_combinations, LogTagSet::ntagsets())
+      << "Combination limit not sufficient for configuring all available tag sets";
+}
 
 TEST(LogSelectionList, parse) {
   char buf[256];

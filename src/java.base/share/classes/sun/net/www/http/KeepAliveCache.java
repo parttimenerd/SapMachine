@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,8 +30,6 @@ import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.URL;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -39,7 +37,6 @@ import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
 import jdk.internal.misc.InnocuousThread;
-import sun.security.action.GetIntegerAction;
 import sun.net.www.protocol.http.HttpURLConnection;
 import sun.util.logging.PlatformLogger;
 
@@ -69,10 +66,8 @@ public class KeepAliveCache
 
     static final PlatformLogger logger = HttpURLConnection.getHttpLogger();
 
-    @SuppressWarnings("removal")
     static int getUserKeepAliveSeconds(String type) {
-        int v = AccessController.doPrivileged(
-            new GetIntegerAction(keepAliveProp+type, -1)).intValue();
+        int v = Integer.getInteger(keepAliveProp+type, -1);
         return v < -1 ? -1 : v;
     }
 
@@ -80,6 +75,9 @@ public class KeepAliveCache
         userKeepAliveServer = getUserKeepAliveSeconds("server");
         userKeepAliveProxy = getUserKeepAliveSeconds("proxy");
     }
+
+    // SapMachine 2024-04-12: Provide additional key field for KeepAliveCache entries (for FRUN)
+    public static final ThreadLocal<String> connectionID = new ThreadLocal<>();
 
     /* maximum # keep-alive connections to maintain at once
      * This should be 2 by the HTTP spec, but because we don't support pipe-lining
@@ -89,12 +87,9 @@ public class KeepAliveCache
      */
     static final int MAX_CONNECTIONS = 5;
     static int result = -1;
-    @SuppressWarnings("removal")
     static int getMaxConnections() {
         if (result == -1) {
-            result = AccessController.doPrivileged(
-                new GetIntegerAction("http.maxConnections", MAX_CONNECTIONS))
-                .intValue();
+            result = Integer.getInteger("http.maxConnections", MAX_CONNECTIONS);
             if (result <= 0) {
                 result = MAX_CONNECTIONS;
             }
@@ -119,7 +114,6 @@ public class KeepAliveCache
      * @param url  The URL contains info about the host and port
      * @param http The HttpClient to be cached
      */
-    @SuppressWarnings("removal")
     public void put(final URL url, Object obj, HttpClient http) {
         // this method may need to close an HttpClient, either because
         // it is not cacheable, or because the cache is at its capacity.
@@ -144,15 +138,10 @@ public class KeepAliveCache
                  * The robustness to get around this is in HttpClient.parseHTTP()
                  */
                 final KeepAliveCache cache = this;
-                AccessController.doPrivileged(new PrivilegedAction<>() {
-                    public Void run() {
-                        keepAliveTimer = InnocuousThread.newSystemThread("Keep-Alive-Timer", cache);
-                        keepAliveTimer.setDaemon(true);
-                        keepAliveTimer.setPriority(Thread.MAX_PRIORITY - 2);
-                        keepAliveTimer.start();
-                        return null;
-                    }
-                });
+                keepAliveTimer = InnocuousThread.newSystemThread("Keep-Alive-Timer", cache);
+                keepAliveTimer.setDaemon(true);
+                keepAliveTimer.setPriority(Thread.MAX_PRIORITY - 2);
+                keepAliveTimer.start();
             }
 
             KeepAliveKey key = new KeepAliveKey(url, obj);
@@ -367,6 +356,9 @@ public class KeepAliveCache
 }
 
 class KeepAliveKey {
+    // SapMachine 2024-04-12: Provide additional key field for KeepAliveCache entries (for FRUN)
+    private static boolean useKeyExtension = Boolean.getBoolean("com.sap.jvm.UseHttpKeepAliveCacheKeyExtension");
+
     private final String      protocol;
     private final String      host;
     private final int         port;
@@ -378,10 +370,25 @@ class KeepAliveKey {
      * @param url the URL containing the protocol, host and port information
      */
     public KeepAliveKey(URL url, Object obj) {
+        // SapMachine 2024-04-12: Provide additional key field for KeepAliveCache entries (for FRUN)
+        final record KeyObject(String connectionID, Object obj) {
+            @Override
+            public boolean equals(Object other) {
+                if (this == other) {
+                    return true;
+                } else if (other instanceof KeyObject ok) {
+                    return (connectionID == null ? ok.connectionID == null : connectionID.equals(ok.connectionID)) && obj == ok.obj;
+                } else {
+                    return false;
+                }
+            }
+        };
+
         this.protocol = url.getProtocol();
         this.host = url.getHost();
         this.port = url.getPort();
-        this.obj = obj;
+        // SapMachine 2024-04-12: Provide additional key field for KeepAliveCache entries (for FRUN)
+        this.obj = useKeyExtension ? new KeyObject(KeepAliveCache.connectionID.get(), obj) : obj;
     }
 
     /**
@@ -389,13 +396,14 @@ class KeepAliveKey {
      */
     @Override
     public boolean equals(Object obj) {
-        if ((obj instanceof KeepAliveKey) == false)
+        if (!(obj instanceof KeepAliveKey kae))
             return false;
-        KeepAliveKey kae = (KeepAliveKey)obj;
+
         return host.equals(kae.host)
             && (port == kae.port)
             && protocol.equals(kae.protocol)
-            && this.obj == kae.obj;
+            // SapMachine 2024-04-12: Provide additional key field for KeepAliveCache entries (for FRUN)
+            && useKeyExtension ? this.obj.equals(kae.obj) : this.obj == kae.obj;
     }
 
     /**
@@ -405,7 +413,7 @@ class KeepAliveKey {
     @Override
     public int hashCode() {
         String str = protocol+host+port;
-        return this.obj == null? str.hashCode() :
+        return this.obj == null ? str.hashCode() :
             str.hashCode() + this.obj.hashCode();
     }
 }

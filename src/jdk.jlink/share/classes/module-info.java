@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,6 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-
-import jdk.internal.javac.ParticipatesInPreview;
 
 /**
  * Defines the <em>{@index jlink jlink tool}</em> tool for creating run-time
@@ -53,7 +51,6 @@ import jdk.internal.javac.ParticipatesInPreview;
  * @moduleGraph
  * @since 9
  */
-@ParticipatesInPreview
 module jdk.jlink {
     requires jdk.internal.opt;
     requires jdk.jdeps;
@@ -84,5 +81,7 @@ module jdk.jlink {
         jdk.tools.jlink.internal.plugins.VendorVMBugURLPlugin,
         jdk.tools.jlink.internal.plugins.VendorVersionPlugin,
         jdk.tools.jlink.internal.plugins.CDSPlugin,
+        // SapMachine 2025-01-09: SapMachine tools plugin
+        jdk.tools.jlink.internal.plugins.AddSapMachineTools,
         jdk.tools.jlink.internal.plugins.SaveJlinkArgfilesPlugin;
 }

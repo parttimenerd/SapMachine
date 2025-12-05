@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2019, 2023 SAP SE. All rights reserved.
- * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2025 SAP SE. All rights reserved.
  *
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,10 +23,9 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "memory/resourceArea.hpp"
-#include "utilities/ostream.hpp"
 #include "utilities/globalDefinitions.hpp"
+#include "utilities/ostream.hpp"
 #include "vitals/vitals.hpp"
 #include "vitals/vitalsDCmd.hpp"
 
